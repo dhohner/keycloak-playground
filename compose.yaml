@@ -1,7 +1,6 @@
 services:
   postgres:
     image: postgres:17-alpine
-    container_name: keycloak-postgres
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-keycloak}
       POSTGRES_USER: ${POSTGRES_USER:-keycloak}
@@ -19,7 +18,6 @@ services:
 
   keycloak:
     image: quay.io/keycloak/keycloak:26.6.1
-    container_name: keycloak-playground
     command:
       - ${KEYCLOAK_START_COMMAND:-start-dev}
     depends_on:
@@ -80,3 +78,4 @@ services:
 
 volumes:
   postgres-data:
+    name: keycloak-playground-postgres-data

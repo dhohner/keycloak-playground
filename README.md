@@ -16,9 +16,11 @@ Create certs first, then start with Docker or Podman.
 
 ```bash
 cp .env.example .env
-podman compose up
+podman-compose up -d
+podman-compose logs -f keycloak
 # or
-docker compose up
+docker-compose up -d
+docker-compose logs -f keycloak
 ```
 
 Open:
@@ -36,9 +38,9 @@ admin / admin
 Reset local DB:
 
 ```bash
-podman compose down -v
+podman-compose down -v
 # or
-docker compose down -v
+docker-compose down -v
 ```
 
 ## Required files
@@ -80,6 +82,15 @@ keytool -importcert -noprompt \
   -storepass changeit
 ```
 
+### Optional: Trust Custom CA
+
+```bash
+sudo security add-trusted-cert \
+     -d -r trustRoot \
+     -k /Library/Keychains/System.keychain \
+     certs/server/tls.crt
+```
+
 ## Runtime modes
 
 Default:
@@ -91,9 +102,9 @@ KEYCLOAK_START_COMMAND=start-dev
 Production mode:
 
 ```bash
-KEYCLOAK_START_COMMAND=start podman compose up
+KEYCLOAK_START_COMMAND=start podman-compose up
 # or
-KEYCLOAK_START_COMMAND=start docker compose up
+KEYCLOAK_START_COMMAND=start docker-compose up
 ```
 
 For one canonical hostname:
@@ -102,7 +113,7 @@ For one canonical hostname:
 KEYCLOAK_START_COMMAND=start \
 KC_HOSTNAME=auth.example.com \
 KC_HOSTNAME_STRICT=true \
-podman compose up
+podman-compose up
 ```
 
 For dynamic multi-domain issuers, do **not** set `KC_HOSTNAME`; keep:
@@ -134,9 +145,9 @@ KC_HTTPS_TRUST_STORE_FILE=/opt/keycloak/conf/mtls/client-truststore.p12
 Use hard mTLS:
 
 ```bash
-KC_HTTPS_CLIENT_AUTH=required podman compose up
+KC_HTTPS_CLIENT_AUTH=required podman-compose up
 # or
-KC_HTTPS_CLIENT_AUTH=required docker compose up
+KC_HTTPS_CLIENT_AUTH=required docker-compose up
 ```
 
 `request` allows browser/admin access without a client cert. `required` requires every HTTPS caller to present a trusted client cert.
