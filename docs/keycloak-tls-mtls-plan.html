@@ -1,0 +1,1444 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Keycloak TLS + mTLS — Implementation Reference</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;0,700;1,400;1,600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  /* ============ THEME — Blueprint ============ */
+  :root {
+    --font-body: 'IBM Plex Sans', system-ui, sans-serif;
+    --font-mono: 'IBM Plex Mono', 'SF Mono', Consolas, monospace;
+
+    --bg: #f0f4f9;
+    --surface: #ffffff;
+    --surface-elevated: #ffffff;
+    --surface-recessed: #e8edf4;
+    --border: rgba(15, 40, 80, 0.09);
+    --border-bright: rgba(15, 40, 80, 0.18);
+    --text: #0c1931;
+    --text-dim: #4a5d7a;
+
+    /* Accent palette — amber + teal, no violet/indigo */
+    --amber: #b45309;
+    --amber-dim: rgba(180, 83, 9, 0.09);
+    --amber-bright: #92400e;
+    --teal: #0891b2;
+    --teal-dim: rgba(8, 145, 178, 0.09);
+    --rose: #be123c;
+    --rose-dim: rgba(190, 18, 60, 0.08);
+    --sage: #15803d;
+    --sage-dim: rgba(21, 128, 61, 0.08);
+    --slate: #334155;
+    --slate-dim: rgba(51, 65, 85, 0.07);
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0c1829;
+      --surface: #14243a;
+      --surface-elevated: #1a2e48;
+      --surface-recessed: #0a1220;
+      --border: rgba(180, 220, 255, 0.07);
+      --border-bright: rgba(180, 220, 255, 0.14);
+      --text: #dce8f5;
+      --text-dim: #7ea3c5;
+
+      --amber: #fbbf24;
+      --amber-dim: rgba(251, 191, 36, 0.10);
+      --amber-bright: #fcd34d;
+      --teal: #22d3ee;
+      --teal-dim: rgba(34, 211, 238, 0.10);
+      --rose: #fb7185;
+      --rose-dim: rgba(251, 113, 133, 0.10);
+      --sage: #34d399;
+      --sage-dim: rgba(52, 211, 153, 0.10);
+      --slate: #94a3b8;
+      --slate-dim: rgba(148, 163, 184, 0.08);
+    }
+  }
+
+  /* ============ RESET ============ */
+  *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+  html { scroll-behavior: smooth; }
+
+  body {
+    background-color: var(--bg);
+    background-image: radial-gradient(circle, var(--border) 1px, transparent 1px);
+    background-size: 22px 22px;
+    color: var(--text);
+    font-family: var(--font-body);
+    font-size: 14px;
+    line-height: 1.65;
+    padding: 48px 24px 80px;
+    min-height: 100vh;
+    overflow-wrap: break-word;
+  }
+
+  /* ============ ANIMATIONS ============ */
+  @keyframes fadeUp {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  .anim { animation: fadeUp 0.4s ease-out both; animation-delay: calc(var(--i,0) * 0.05s); }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation-duration: 0.01ms !important; animation-delay: 0ms !important; }
+  }
+
+  /* ============ LAYOUT ============ */
+  .container { max-width: 980px; margin: 0 auto; }
+
+  section { margin-bottom: 52px; }
+
+  .section-label {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    color: var(--amber);
+    margin-bottom: 12px;
+  }
+
+  h2 {
+    font-size: 18px;
+    font-weight: 600;
+    color: var(--text);
+    margin-bottom: 18px;
+    letter-spacing: -0.3px;
+  }
+
+  /* ============ HERO HEADER ============ */
+  .hero {
+    background: var(--surface-elevated);
+    border: 1px solid var(--border-bright);
+    border-top: 3px solid var(--amber);
+    border-radius: 12px;
+    padding: 36px 40px;
+    margin-bottom: 52px;
+    box-shadow: 0 4px 24px rgba(0,0,0,0.07), 0 1px 3px rgba(0,0,0,0.04);
+    overflow-wrap: break-word;
+  }
+
+  .hero__badge {
+    display: inline-block;
+    font-family: var(--font-mono);
+    font-size: 10px;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    color: var(--amber);
+    background: var(--amber-dim);
+    border: 1px solid var(--amber);
+    border-radius: 4px;
+    padding: 3px 10px;
+    margin-bottom: 16px;
+  }
+
+  .hero h1 {
+    font-size: 36px;
+    font-weight: 700;
+    letter-spacing: -1px;
+    line-height: 1.15;
+    margin-bottom: 10px;
+    text-wrap: balance;
+  }
+
+  .hero h1 em {
+    font-style: italic;
+    color: var(--teal);
+  }
+
+  .hero__sub {
+    font-size: 15px;
+    color: var(--text-dim);
+    max-width: 660px;
+    margin-bottom: 24px;
+    line-height: 1.7;
+  }
+
+  .hero__tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    min-width: 0;
+  }
+
+  .hero__tag {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--text-dim);
+    background: var(--surface-recessed);
+    border: 1px solid var(--border-bright);
+    border-radius: 4px;
+    padding: 3px 10px;
+    white-space: nowrap;
+  }
+
+  /* ============ BEFORE / AFTER ============ */
+  .compare-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    min-width: 0;
+  }
+
+  @media (max-width: 640px) {
+    .compare-grid { grid-template-columns: 1fr; }
+  }
+
+  .compare-panel {
+    background: var(--surface);
+    border: 1px solid var(--border-bright);
+    border-radius: 10px;
+    overflow: hidden;
+    min-width: 0;
+  }
+
+  .compare-panel__head {
+    padding: 10px 18px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .compare-panel--before .compare-panel__head {
+    background: var(--rose-dim);
+    color: var(--rose);
+    border-bottom: 1px solid var(--rose-dim);
+  }
+
+  .compare-panel--after .compare-panel__head {
+    background: var(--sage-dim);
+    color: var(--sage);
+    border-bottom: 1px solid var(--sage-dim);
+  }
+
+  .compare-panel__body { padding: 18px; min-width: 0; overflow-wrap: break-word; }
+
+  .flow-step {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    margin-bottom: 12px;
+    min-width: 0;
+  }
+
+  .flow-step:last-child { margin-bottom: 0; }
+
+  .flow-step__num {
+    flex-shrink: 0;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    font-weight: 500;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-top: 1px;
+  }
+
+  .compare-panel--before .flow-step__num { background: var(--rose-dim); color: var(--rose); }
+  .compare-panel--after .flow-step__num { background: var(--sage-dim); color: var(--sage); }
+
+  .flow-step__text {
+    font-size: 13px;
+    color: var(--text-dim);
+    min-width: 0;
+    overflow-wrap: break-word;
+  }
+
+  .flow-step__text strong { color: var(--text); }
+
+  .flow-arrow {
+    text-align: center;
+    color: var(--border-bright);
+    font-size: 18px;
+    margin: 4px 0 8px;
+    line-height: 1;
+  }
+
+  /* ============ CARDS GRID ============ */
+  .cards-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    gap: 16px;
+    min-width: 0;
+  }
+
+  .cards-grid--two { grid-template-columns: 1fr 1fr; }
+
+  @media (max-width: 640px) {
+    .cards-grid--two { grid-template-columns: 1fr; }
+  }
+
+  .ve-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 18px 20px;
+    min-width: 0;
+    overflow-wrap: break-word;
+  }
+
+  .ve-card--elevated {
+    background: var(--surface-elevated);
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
+  }
+
+  .ve-card--amber { border-left: 3px solid var(--amber); }
+  .ve-card--teal  { border-left: 3px solid var(--teal); }
+  .ve-card--rose  { border-left: 3px solid var(--rose); }
+  .ve-card--sage  { border-left: 3px solid var(--sage); }
+  .ve-card--slate { border-left: 3px solid var(--slate); }
+
+  .ve-card__label {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    margin-bottom: 8px;
+  }
+
+  .ve-card--amber .ve-card__label { color: var(--amber); }
+  .ve-card--teal .ve-card__label { color: var(--teal); }
+  .ve-card--rose .ve-card__label { color: var(--rose); }
+  .ve-card--sage .ve-card__label { color: var(--sage); }
+  .ve-card--slate .ve-card__label { color: var(--slate); }
+
+  .ve-card__title { font-size: 15px; font-weight: 600; margin-bottom: 6px; }
+  .ve-card__body { font-size: 13px; color: var(--text-dim); line-height: 1.6; }
+  .ve-card__body code { font-family: var(--font-mono); font-size: 11.5px; color: var(--amber); background: var(--amber-dim); padding: 1px 5px; border-radius: 3px; }
+
+  /* ============ CODE BLOCKS ============ */
+  .code-block {
+    background: var(--surface-recessed);
+    border: 1px solid var(--border-bright);
+    border-radius: 8px;
+    padding: 14px 18px;
+    font-family: var(--font-mono);
+    font-size: 12.5px;
+    line-height: 1.65;
+    color: var(--text);
+    white-space: pre-wrap;
+    word-break: break-word;
+    overflow-wrap: break-word;
+    min-width: 0;
+  }
+
+  .code-block .cm { color: var(--text-dim); } /* comment */
+  .code-block .kw { color: var(--teal); }     /* keyword/env key */
+  .code-block .va { color: var(--amber); }    /* value */
+  .code-block .co { color: var(--sage); }     /* command */
+  .code-block .op { color: var(--rose); }     /* operator */
+
+  .code-file {
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    color: var(--text-dim);
+    margin-bottom: 6px;
+    letter-spacing: 0.3px;
+  }
+
+  /* ============ TABLES ============ */
+  .table-wrap {
+    overflow-x: auto;
+    border-radius: 10px;
+    border: 1px solid var(--border-bright);
+    min-width: 0;
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+  }
+
+  thead th {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    color: var(--text-dim);
+    background: var(--surface-recessed);
+    padding: 10px 16px;
+    text-align: left;
+    border-bottom: 1px solid var(--border-bright);
+    position: sticky;
+    top: 0;
+    white-space: nowrap;
+  }
+
+  tbody tr { border-bottom: 1px solid var(--border); }
+  tbody tr:last-child { border-bottom: none; }
+  tbody tr:nth-child(even) { background: var(--surface-recessed); }
+  tbody tr:nth-child(odd) { background: var(--surface); }
+  tbody td { padding: 10px 16px; vertical-align: top; overflow-wrap: break-word; }
+
+  tbody td code {
+    font-family: var(--font-mono);
+    font-size: 11.5px;
+    color: var(--amber);
+    background: var(--amber-dim);
+    padding: 1px 5px;
+    border-radius: 3px;
+    white-space: nowrap;
+  }
+
+  td.dim { color: var(--text-dim); }
+
+  .badge {
+    display: inline-block;
+    font-family: var(--font-mono);
+    font-size: 10px;
+    padding: 2px 7px;
+    border-radius: 3px;
+    font-weight: 500;
+    white-space: nowrap;
+  }
+
+  .badge--amber { background: var(--amber-dim); color: var(--amber); border: 1px solid var(--amber); }
+  .badge--teal  { background: var(--teal-dim); color: var(--teal); border: 1px solid var(--teal); }
+  .badge--rose  { background: var(--rose-dim); color: var(--rose); border: 1px solid var(--rose); }
+  .badge--sage  { background: var(--sage-dim); color: var(--sage); border: 1px solid var(--sage); }
+  .badge--slate { background: var(--slate-dim); color: var(--slate); border: 1px solid var(--slate); }
+
+  /* ============ CALLOUTS ============ */
+  .callout {
+    border-radius: 0 10px 10px 0;
+    padding: 16px 20px;
+    font-size: 13px;
+    line-height: 1.65;
+    color: var(--text-dim);
+    margin-top: 16px;
+    overflow-wrap: break-word;
+    min-width: 0;
+  }
+
+  .callout--amber { background: var(--amber-dim); border-left: 3px solid var(--amber); }
+  .callout--rose  { background: var(--rose-dim);  border-left: 3px solid var(--rose); }
+  .callout--teal  { background: var(--teal-dim);  border-left: 3px solid var(--teal); }
+
+  .callout strong { color: var(--text); }
+  .callout code {
+    font-family: var(--font-mono);
+    font-size: 11.5px;
+    background: rgba(255,255,255,0.3);
+    padding: 1px 5px;
+    border-radius: 3px;
+  }
+
+  /* ============ MERMAID CONTAINER ============ */
+  .diagram-shell { position: relative; min-width: 0; }
+
+  .diagram-shell__hint {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--text-dim);
+    margin-bottom: 8px;
+    opacity: 0.75;
+  }
+
+  .mermaid-wrap {
+    position: relative;
+    background: var(--surface-elevated);
+    border: 1px solid var(--border-bright);
+    border-radius: 12px;
+    overflow: hidden;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 420px;
+    cursor: grab;
+  }
+
+  .mermaid-wrap.is-panning { cursor: grabbing; user-select: none; }
+
+  .zoom-controls {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    display: flex;
+    gap: 2px;
+    z-index: 10;
+    background: var(--surface);
+    border: 1px solid var(--border-bright);
+    border-radius: 6px;
+    padding: 2px;
+  }
+
+  .zoom-controls button {
+    width: 28px;
+    height: 28px;
+    border: none;
+    background: transparent;
+    color: var(--text-dim);
+    font-family: var(--font-mono);
+    font-size: 14px;
+    cursor: pointer;
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.15s, color 0.15s;
+  }
+
+  .zoom-controls button:hover { background: var(--border); color: var(--text); }
+
+  .zoom-label {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--text-dim);
+    padding: 0 6px;
+    white-space: nowrap;
+    line-height: 28px;
+  }
+
+  .mermaid-viewport {
+    position: relative;
+    overflow: hidden;
+    width: 100%;
+    height: 100%;
+    min-height: 300px;
+  }
+
+  .mermaid-canvas {
+    position: absolute;
+    top: 0;
+    left: 0;
+  }
+
+  .mermaid .nodeLabel { font-family: var(--font-body) !important; font-size: 14px !important; }
+  .mermaid .edgeLabel { font-family: var(--font-mono) !important; font-size: 12px !important; }
+  .mermaid .node rect, .mermaid .node circle, .mermaid .node polygon { stroke-width: 1.5px !important; }
+
+  .diagram-caption {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--text-dim);
+    text-align: center;
+    margin-top: 10px;
+    letter-spacing: 0.3px;
+  }
+
+  /* ============ FILE TREE ============ */
+  .file-tree {
+    font-family: var(--font-mono);
+    font-size: 12.5px;
+    line-height: 1.8;
+    color: var(--text);
+    white-space: pre;
+    overflow-wrap: break-word;
+    word-break: break-word;
+  }
+
+  .file-tree .ft-dir { color: var(--teal); }
+  .file-tree .ft-file { color: var(--text-dim); }
+  .file-tree .ft-req { color: var(--amber); }
+  .file-tree .ft-opt { color: var(--sage); }
+
+  /* ============ RESPONSIVE ============ */
+  @media (max-width: 768px) {
+    body { padding: 20px 14px 60px; }
+    .hero { padding: 24px 22px; }
+    .hero h1 { font-size: 26px; }
+    .cards-grid { grid-template-columns: 1fr; }
+    .cards-grid--two { grid-template-columns: 1fr; }
+    .compare-grid { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+<div class="container">
+
+  <!-- ══════════════════════════════════════════
+       HERO HEADER
+  ══════════════════════════════════════════ -->
+  <header class="hero anim" style="--i:0">
+    <div class="hero__badge">Implementation Reference</div>
+    <h1>Keycloak <em>TLS + mTLS</em><br>+ Postgres Stack</h1>
+    <p class="hero__sub">
+      Self-contained Keycloak 26.6.1 deployment with inbound server TLS,
+      mutual TLS client authentication, custom internal CA trust for outbound
+      HTTPS, and a Postgres 17 backend — running locally via Docker/Podman Compose
+      or on OpenShift with passthrough Routes.
+    </p>
+    <div class="hero__tags">
+      <span class="hero__tag">keycloak 26.6.1</span>
+      <span class="hero__tag">postgres 17</span>
+      <span class="hero__tag">docker / podman compose</span>
+      <span class="hero__tag">openshift passthrough tls</span>
+      <span class="hero__tag">mtls client auth</span>
+      <span class="hero__tag">custom internal ca</span>
+      <span class="hero__tag">multi-domain issuer</span>
+    </div>
+  </header>
+
+  <!-- ══════════════════════════════════════════
+       1. THE PROBLEM — BEFORE / AFTER
+  ══════════════════════════════════════════ -->
+  <section class="anim" style="--i:1">
+    <div class="section-label">§ 01 — The Problem</div>
+    <h2>Before vs. After</h2>
+    <div class="compare-grid">
+
+      <!-- BEFORE -->
+      <div class="compare-panel compare-panel--before">
+        <div class="compare-panel__head">
+          <span>✕</span> Before — HTTP only, no trust controls
+        </div>
+        <div class="compare-panel__body">
+          <div class="flow-step">
+            <div class="flow-step__num">1</div>
+            <div class="flow-step__text">Client connects to Keycloak over <strong>plain HTTP</strong> — credentials and tokens travel unencrypted.</div>
+          </div>
+          <div class="flow-arrow">↓</div>
+          <div class="flow-step">
+            <div class="flow-step__num">2</div>
+            <div class="flow-step__text"><strong>No client cert validation</strong>: any caller can hit the token endpoint. API clients are authenticated only by client secret.</div>
+          </div>
+          <div class="flow-arrow">↓</div>
+          <div class="flow-step">
+            <div class="flow-step__num">3</div>
+            <div class="flow-step__text">Keycloak cannot call internal services signed by a <strong>company/internal CA</strong> — TLS handshakes fail with certificate errors.</div>
+          </div>
+          <div class="flow-arrow">↓</div>
+          <div class="flow-step">
+            <div class="flow-step__num">4</div>
+            <div class="flow-step__text">OpenShift deployment requires <strong>re-encryption or edge termination</strong> — Keycloak never sees the original TLS connection.</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- AFTER -->
+      <div class="compare-panel compare-panel--after">
+        <div class="compare-panel__head">
+          <span>✓</span> After — Full TLS stack, zero custom images
+        </div>
+        <div class="compare-panel__body">
+          <div class="flow-step">
+            <div class="flow-step__num">1</div>
+            <div class="flow-step__text">Keycloak serves <strong>HTTPS on :8443</strong> with its own server cert/key mounted — no sidecar, no custom image.</div>
+          </div>
+          <div class="flow-arrow">↓</div>
+          <div class="flow-step">
+            <div class="flow-step__num">2</div>
+            <div class="flow-step__text"><strong>mTLS client auth</strong> via <code>KC_HTTPS_CLIENT_AUTH=request|required</code>: API clients must present a cert trusted by the client truststore.</div>
+          </div>
+          <div class="flow-arrow">↓</div>
+          <div class="flow-step">
+            <div class="flow-step__num">3</div>
+            <div class="flow-step__text">Internal CA certs dropped into <code>certs/internal-ca/</code> and mounted via <code>KC_TRUSTSTORE_PATHS</code> — Keycloak trusts them for all outbound calls.</div>
+          </div>
+          <div class="flow-arrow">↓</div>
+          <div class="flow-step">
+            <div class="flow-step__num">4</div>
+            <div class="flow-step__text">OpenShift <strong>passthrough Route</strong> forwards raw TCP to Keycloak :8443 — Keycloak terminates TLS itself, preserving client certs end-to-end.</div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- ══════════════════════════════════════════
+       2. ARCHITECTURE DIAGRAM
+  ══════════════════════════════════════════ -->
+  <section class="anim" style="--i:2">
+    <div class="section-label">§ 02 — Architecture</div>
+    <h2>Connection Flow &amp; TLS Boundaries</h2>
+
+    <section class="diagram-shell">
+      <p class="diagram-shell__hint">Ctrl/Cmd + wheel to zoom · drag to pan · double-click to fit · ⛶ to expand</p>
+      <div class="mermaid-wrap">
+        <div class="zoom-controls">
+          <button type="button" data-action="zoom-in" title="Zoom in">+</button>
+          <button type="button" data-action="zoom-out" title="Zoom out">&minus;</button>
+          <button type="button" data-action="zoom-fit" title="Smart fit">&#8634;</button>
+          <button type="button" data-action="zoom-one" title="1:1 zoom">1:1</button>
+          <button type="button" data-action="zoom-expand" title="Open full size">&#x26F6;</button>
+          <span class="zoom-label">Loading…</span>
+        </div>
+        <div class="mermaid-viewport">
+          <div class="mermaid mermaid-canvas"></div>
+        </div>
+      </div>
+      <script type="text/plain" class="diagram-source">
+flowchart TD
+  Browser["🌐 Browser / OIDC Client"]
+  mClient["🔐 API Client<br/>curl --cert client.crt"]
+
+  subgraph osh["OpenShift (optional)"]
+    Route["Passthrough Route<br/>dhohner.de / .at / .intern"]
+  end
+
+  subgraph stack["Docker / Podman Compose"]
+    KC["Keycloak 26.6.1<br/>HTTPS :8443"]
+    Mgmt["Management<br/>:9000 /health/ready"]
+    PG["Postgres 17<br/>:5432"]
+  end
+
+  IntCA["certs/internal-ca/*.crt<br/>KC_TRUSTSTORE_PATHS"]
+  IntSvc["Internal HTTPS Services<br/>(signed by internal CA)"]
+
+  Browser -->|"① HTTPS — server cert"| Route
+  mClient -->|"② HTTPS + mTLS client cert"| Route
+  Route -->|"TCP passthrough"| KC
+  KC -.->|"healthcheck"| Mgmt
+  KC -->|"③ JDBC — sessions & realms"| PG
+  IntCA -->|"trusted by"| KC
+  KC -->|"④ outbound HTTPS"| IntSvc
+      </script>
+    </section>
+    <p class="diagram-caption">
+      Keycloak terminates TLS itself. The OpenShift Route does zero TLS processing — it forwards raw TCP.
+      Mutual TLS is handled at the Keycloak layer, not the router.
+    </p>
+  </section>
+
+  <!-- ══════════════════════════════════════════
+       3. TLS TRUST DIRECTIONS
+  ══════════════════════════════════════════ -->
+  <section class="anim" style="--i:3">
+    <div class="section-label">§ 03 — Trust Directions</div>
+    <h2>Three Independent TLS Trust Planes</h2>
+    <div class="cards-grid">
+
+      <div class="ve-card ve-card--elevated ve-card--teal">
+        <div class="ve-card__label">Inbound — Serve HTTPS</div>
+        <div class="ve-card__title">Server Certificate</div>
+        <div class="ve-card__body">
+          Keycloak presents its own server TLS cert to connecting clients. The cert must match
+          all served hostnames in its SAN.<br><br>
+          <code>KC_HTTPS_CERTIFICATE_FILE</code><br>
+          <code>KC_HTTPS_CERTIFICATE_KEY_FILE</code><br><br>
+          Mounted at:<br>
+          <code>/opt/keycloak/conf/tls/tls.crt</code><br>
+          <code>/opt/keycloak/conf/tls/tls.key</code>
+        </div>
+      </div>
+
+      <div class="ve-card ve-card--elevated ve-card--amber">
+        <div class="ve-card__label">Inbound — Verify Client Certs (mTLS)</div>
+        <div class="ve-card__title">Client Truststore</div>
+        <div class="ve-card__body">
+          Keycloak optionally or mandatorily requests a client certificate and verifies it against
+          the PKCS12 truststore.<br><br>
+          <code>KC_HTTPS_CLIENT_AUTH=request|required</code><br>
+          <code>KC_HTTPS_TRUST_STORE_FILE</code><br>
+          <code>KC_HTTPS_TRUST_STORE_PASSWORD</code><br><br>
+          Mounted at:<br>
+          <code>/opt/keycloak/conf/mtls/client-truststore.p12</code>
+        </div>
+      </div>
+
+      <div class="ve-card ve-card--elevated ve-card--sage">
+        <div class="ve-card__label">Outbound — Trust Internal CA</div>
+        <div class="ve-card__title">Internal CA Truststore</div>
+        <div class="ve-card__body">
+          Keycloak makes outbound HTTPS calls (e.g. to identity providers, LDAP over TLS, webhooks).
+          Custom/internal CA certs are added to Keycloak's trust without rebuilding the image.<br><br>
+          <code>KC_TRUSTSTORE_PATHS</code><br><br>
+          Mounted at:<br>
+          <code>/opt/keycloak/conf/truststores/internal-ca</code><br><br>
+          Drop any <code>.crt</code> / <code>.pem</code> file into <code>certs/internal-ca/</code>.
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- ══════════════════════════════════════════
+       4. ENVIRONMENT VARIABLES
+  ══════════════════════════════════════════ -->
+  <section class="anim" style="--i:4">
+    <div class="section-label">§ 04 — Environment Variables</div>
+    <h2>Configuration Reference</h2>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Variable</th>
+            <th>Default (compose)</th>
+            <th>Purpose</th>
+            <th>Trust plane</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>KC_HTTP_ENABLED</code></td>
+            <td><code>false</code></td>
+            <td class="dim">Disables plain HTTP listener — HTTPS only.</td>
+            <td><span class="badge badge--teal">inbound TLS</span></td>
+          </tr>
+          <tr>
+            <td><code>KC_HTTPS_PORT</code></td>
+            <td><code>8443</code></td>
+            <td class="dim">HTTPS listener port.</td>
+            <td><span class="badge badge--teal">inbound TLS</span></td>
+          </tr>
+          <tr>
+            <td><code>KC_HTTPS_CERTIFICATE_FILE</code></td>
+            <td><code>/opt/keycloak/conf/tls/tls.crt</code></td>
+            <td class="dim">Path to server certificate PEM (full chain if needed).</td>
+            <td><span class="badge badge--teal">inbound TLS</span></td>
+          </tr>
+          <tr>
+            <td><code>KC_HTTPS_CERTIFICATE_KEY_FILE</code></td>
+            <td><code>/opt/keycloak/conf/tls/tls.key</code></td>
+            <td class="dim">Path to server private key PEM.</td>
+            <td><span class="badge badge--teal">inbound TLS</span></td>
+          </tr>
+          <tr>
+            <td><code>KC_HTTPS_CLIENT_AUTH</code></td>
+            <td><code>request</code></td>
+            <td class="dim"><code>request</code> = optional client cert; <code>required</code> = all callers must present a trusted cert.</td>
+            <td><span class="badge badge--amber">mTLS</span></td>
+          </tr>
+          <tr>
+            <td><code>KC_HTTPS_TRUST_STORE_FILE</code></td>
+            <td><code>/opt/keycloak/conf/mtls/client-truststore.p12</code></td>
+            <td class="dim">PKCS12 truststore containing the CA(s) that sign client certs.</td>
+            <td><span class="badge badge--amber">mTLS</span></td>
+          </tr>
+          <tr>
+            <td><code>KC_HTTPS_TRUST_STORE_PASSWORD</code></td>
+            <td><code>changeit</code></td>
+            <td class="dim">Password for the PKCS12 client truststore.</td>
+            <td><span class="badge badge--amber">mTLS</span></td>
+          </tr>
+          <tr>
+            <td><code>KC_TRUSTSTORE_PATHS</code></td>
+            <td><code>/opt/keycloak/conf/truststores/internal-ca</code></td>
+            <td class="dim">Directory (or file) of CA certs Keycloak trusts for <em>outbound</em> HTTPS calls.</td>
+            <td><span class="badge badge--sage">outbound CA</span></td>
+          </tr>
+          <tr>
+            <td><code>KC_HOSTNAME</code></td>
+            <td><code>localhost</code></td>
+            <td class="dim">Fixed hostname for single-domain mode. <strong>Do not set</strong> for multi-domain dynamic issuer.</td>
+            <td><span class="badge badge--slate">routing</span></td>
+          </tr>
+          <tr>
+            <td><code>KC_HOSTNAME_STRICT</code></td>
+            <td><code>false</code></td>
+            <td class="dim">Must be <code>false</code> for multi-domain issuer mode.</td>
+            <td><span class="badge badge--slate">routing</span></td>
+          </tr>
+          <tr>
+            <td><code>KC_PROXY_HEADERS</code></td>
+            <td><code>xforwarded</code></td>
+            <td class="dim">Trust <code>X-Forwarded-*</code> headers from upstream proxy/router.</td>
+            <td><span class="badge badge--slate">routing</span></td>
+          </tr>
+          <tr>
+            <td><code>KC_DB</code></td>
+            <td><code>postgres</code></td>
+            <td class="dim">Database vendor.</td>
+            <td><span class="badge badge--rose">database</span></td>
+          </tr>
+          <tr>
+            <td><code>KC_DB_URL_HOST</code></td>
+            <td><code>postgres</code></td>
+            <td class="dim">Compose service name of the Postgres container.</td>
+            <td><span class="badge badge--rose">database</span></td>
+          </tr>
+          <tr>
+            <td><code>KEYCLOAK_START_COMMAND</code></td>
+            <td><code>start-dev</code></td>
+            <td class="dim">Switch to <code>start</code> for production mode (enables caching, build optimisation).</td>
+            <td><span class="badge badge--slate">mode</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ══════════════════════════════════════════
+       5. CERTIFICATE FILES
+  ══════════════════════════════════════════ -->
+  <section class="anim" style="--i:5">
+    <div class="section-label">§ 05 — Certificate Files</div>
+    <h2>Required &amp; Optional Files</h2>
+
+    <div class="cards-grid--two cards-grid">
+      <div class="ve-card ve-card--elevated">
+        <div class="ve-card__label" style="color:var(--amber)">File Tree</div>
+        <div class="file-tree"><span class="ft-dir">certs/</span>
+├── <span class="ft-dir">server/</span>
+│   ├── <span class="ft-req">tls.crt</span>          <span class="cm">← required</span>
+│   └── <span class="ft-req">tls.key</span>          <span class="cm">← required</span>
+├── <span class="ft-dir">client-ca/</span>
+│   ├── <span class="ft-file">client-ca.crt</span>    <span class="cm">← build artefact</span>
+│   ├── <span class="ft-file">client-ca.key</span>    <span class="cm">← build artefact</span>
+│   └── <span class="ft-req">client-truststore.p12</span> <span class="cm">← required</span>
+└── <span class="ft-dir">internal-ca/</span>
+    └── <span class="ft-opt">*.crt / *.pem</span>   <span class="cm">← optional</span></div>
+        <div style="margin-top:12px; font-size:12px; color:var(--text-dim);">
+          <span style="color:var(--amber)">■</span> required &nbsp;
+          <span style="color:var(--sage)">■</span> optional &nbsp;
+          <span style="color:var(--text-dim)">■</span> intermediate build artefact
+        </div>
+      </div>
+
+      <div class="ve-card ve-card--elevated">
+        <div class="ve-card__label" style="color:var(--teal)">Dev Cert Generation</div>
+        <div class="code-file"># generate all certs for local dev</div>
+        <div class="code-block"><span class="cm"># 1. Server cert — localhost SAN</span>
+openssl req -x509 -newkey rsa:4096 \
+  -nodes -days 365 \
+  -keyout certs/server/tls.key \
+  -out  certs/server/tls.crt \
+  -subj "/CN=localhost" \
+  -addext "subjectAltName=\
+DNS:localhost,IP:127.0.0.1"
+
+<span class="cm"># 2. Client CA</span>
+openssl req -x509 -newkey rsa:4096 \
+  -nodes -days 365 \
+  -keyout certs/client-ca/client-ca.key \
+  -out  certs/client-ca/client-ca.crt \
+  -subj "/CN=kc-playground-client-ca"
+
+<span class="cm"># 3. PKCS12 truststore for Keycloak</span>
+keytool -importcert -noprompt \
+  -alias client-ca \
+  -file  certs/client-ca/client-ca.crt \
+  -keystore certs/client-ca/client-truststore.p12 \
+  -storetype PKCS12 \
+  -storepass changeit</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══════════════════════════════════════════
+       6. DEPLOYMENT MODES
+  ══════════════════════════════════════════ -->
+  <section class="anim" style="--i:6">
+    <div class="section-label">§ 06 — Deployment Modes</div>
+    <h2>Running the Stack</h2>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Mode</th>
+            <th>Command</th>
+            <th>Key differences</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><span class="badge badge--teal">dev</span></td>
+            <td><code>docker compose up</code></td>
+            <td class="dim"><code>start-dev</code>: no build step, embedded H2 cache disabled, hot reload. Postgres is still used as backend DB.</td>
+          </tr>
+          <tr>
+            <td><span class="badge badge--amber">production</span></td>
+            <td><code>KEYCLOAK_START_COMMAND=start KC_HOSTNAME=localhost docker compose up</code></td>
+            <td class="dim"><code>start</code>: runs build optimisation, enables distributed caches. Fixed <code>KC_HOSTNAME</code> required in single-domain mode.</td>
+          </tr>
+          <tr>
+            <td><span class="badge badge--amber">production multi-domain</span></td>
+            <td><code>KEYCLOAK_START_COMMAND=start KC_HOSTNAME_STRICT=false docker compose up</code></td>
+            <td class="dim">Dynamic issuer per domain. <strong>Do not</strong> set <code>KC_HOSTNAME</code>. Issuer is derived from the incoming <code>Host</code> header.</td>
+          </tr>
+          <tr>
+            <td><span class="badge badge--rose">hard mTLS</span></td>
+            <td><code>KC_HTTPS_CLIENT_AUTH=required docker compose up</code></td>
+            <td class="dim">Every caller must present a client cert trusted by <code>client-truststore.p12</code>. Admin UI and browser access break without a valid cert.</td>
+          </tr>
+          <tr>
+            <td><span class="badge badge--slate">OpenShift</span></td>
+            <td>Apply Route + Service manifests, mount <code>keycloak-tls</code> Secret</td>
+            <td class="dim">Passthrough Route on each domain (dhohner.de / .at / .intern). All routes point to same Service :8443. Keycloak terminates TLS.</td>
+          </tr>
+          <tr>
+            <td><span class="badge badge--rose">reset DB</span></td>
+            <td><code>docker compose down -v</code></td>
+            <td class="dim">Removes <code>postgres-data</code> named volume. All realms, users, and sessions are lost.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ══════════════════════════════════════════
+       7. OPENSHIFT MANIFESTS
+  ══════════════════════════════════════════ -->
+  <section class="anim" style="--i:7">
+    <div class="section-label">§ 07 — OpenShift Manifests</div>
+    <h2>Passthrough Route + Service</h2>
+    <div class="cards-grid--two cards-grid">
+
+      <div>
+        <div class="code-file">openshift/route-dhohner-de.yaml</div>
+        <div class="code-block">apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: keycloak-dhohner-de
+spec:
+  host: dhohner.de
+  to:
+    kind: Service
+    name: keycloak
+  port:
+    targetPort: https
+  tls:
+    termination: passthrough</div>
+        <div style="margin-top:8px; font-size:12.5px; color:var(--text-dim);">
+          Create one passthrough Route per domain:
+          <code style="font-family:var(--font-mono); font-size:11.5px; color:var(--teal);">dhohner.de</code>,
+          <code style="font-family:var(--font-mono); font-size:11.5px; color:var(--teal);">dhohner.at</code>,
+          <code style="font-family:var(--font-mono); font-size:11.5px; color:var(--teal);">dhohner.intern</code>.
+          All point to the same Service.
+        </div>
+      </div>
+
+      <div>
+        <div class="code-file">openshift/service.yaml</div>
+        <div class="code-block">apiVersion: v1
+kind: Service
+metadata:
+  name: keycloak
+spec:
+  selector:
+    app: keycloak
+  ports:
+    - name: https
+      port: 8443
+      targetPort: 8443</div>
+        <div style="margin-top:8px; font-size:12.5px; color:var(--text-dim);">
+          TLS secret mounted into the pod:
+        </div>
+        <div class="code-block" style="margin-top:6px;">oc create secret tls keycloak-tls \
+  --cert=tls.crt \
+  --key=tls.key</div>
+      </div>
+
+    </div>
+
+    <div style="margin-top:16px;">
+      <div class="code-file">SAN requirements for the server certificate</div>
+      <div class="code-block"><span class="kw">Subject Alternative Names:</span>  <span class="va">dhohner.de, dhohner.at, dhohner.intern</span>
+<span class="kw">Key Usage:</span>               <span class="va">serverAuth</span>
+<span class="kw">Chain:</span>                    <span class="va">full chain included (if intermediate CA used)</span>
+<span class="cm"># Keycloak does NOT need to trust Let's Encrypt to serve a Let's Encrypt cert.
+# Only clients/browsers need to trust the issuing CA. Keycloak only needs
+# the server cert + private key.</span></div>
+    </div>
+  </section>
+
+  <!-- ══════════════════════════════════════════
+       8. HEALTHCHECKS
+  ══════════════════════════════════════════ -->
+  <section class="anim" style="--i:8">
+    <div class="section-label">§ 08 — Healthchecks</div>
+    <h2>Readiness Probes</h2>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Service</th>
+            <th>Probe</th>
+            <th>Interval / Retries</th>
+            <th>Notes</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>postgres</code></td>
+            <td><code>pg_isready -U $POSTGRES_USER</code></td>
+            <td class="dim">10s / 10 retries</td>
+            <td class="dim">Keycloak container depends on this — it won't start until Postgres passes.</td>
+          </tr>
+          <tr>
+            <td><code>keycloak</code></td>
+            <td><code>GET http://127.0.0.1:9000/health/ready</code> via <code>/dev/tcp</code></td>
+            <td class="dim">10s / 30 retries, 30s start</td>
+            <td class="dim">Uses Bash <code>/dev/tcp</code> — no <code>curl</code> required inside the container. Management port 9000 is always HTTP (not HTTPS).</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ══════════════════════════════════════════
+       9. EDGE CASES
+  ══════════════════════════════════════════ -->
+  <section class="anim" style="--i:9">
+    <div class="section-label">§ 09 — Edge Cases</div>
+    <h2>Scenarios &amp; Expected Behaviour</h2>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Scenario</th>
+            <th>Expected behaviour</th>
+            <th>Severity</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>KC_HTTPS_CLIENT_AUTH=required</code> + browser access</td>
+            <td class="dim">Browser has no client cert → TLS handshake fails immediately. Admin UI and OIDC browser flows stop working. Use <code>required</code> only on dedicated API-only Routes where every caller can supply a cert.</td>
+            <td><span class="badge badge--rose">breaking</span></td>
+          </tr>
+          <tr>
+            <td>Fixed <code>KC_HOSTNAME</code> set in multi-domain mode</td>
+            <td class="dim">Keycloak hardcodes the issuer URL. Token issuer for <code>dhohner.at</code> still reads <code>dhohner.de</code> → OIDC validation fails. Remove <code>KC_HOSTNAME</code> and keep <code>KC_HOSTNAME_STRICT=false</code>.</td>
+            <td><span class="badge badge--rose">breaking</span></td>
+          </tr>
+          <tr>
+            <td>Missing SAN on server cert (passthrough TLS)</td>
+            <td class="dim">Clients connecting to <code>dhohner.at</code> receive a cert that doesn't cover that hostname → browser shows certificate error. The cert's SAN must include all served domains.</td>
+            <td><span class="badge badge--rose">breaking</span></td>
+          </tr>
+          <tr>
+            <td><code>certs/internal-ca/</code> directory is empty</td>
+            <td class="dim">Keycloak starts fine but won't trust any internal CA. Outbound HTTPS calls to services signed by the internal CA fail with <code>SSLHandshakeException</code>. Drop the CA certs and restart.</td>
+            <td><span class="badge badge--amber">runtime error</span></td>
+          </tr>
+          <tr>
+            <td><code>client-truststore.p12</code> missing at startup</td>
+            <td class="dim">Keycloak fails to start when <code>KC_HTTPS_CLIENT_AUTH</code> is set and the truststore file doesn't exist or can't be read. Ensure the file exists and has correct permissions before compose up.</td>
+            <td><span class="badge badge--rose">startup failure</span></td>
+          </tr>
+          <tr>
+            <td>mTLS client cert from wrong CA</td>
+            <td class="dim">Cert presented but its issuer isn't in <code>client-truststore.p12</code> → TLS handshake fails with <code>unknown ca</code>. Import the correct client CA into the truststore and restart.</td>
+            <td><span class="badge badge--amber">auth failure</span></td>
+          </tr>
+          <tr>
+            <td><code>KC_PROXY_HEADERS</code> not set behind a proxy</td>
+            <td class="dim">Keycloak uses the raw container IP for redirect URIs and issuer. Auth redirects break. Always set <code>KC_PROXY_HEADERS=xforwarded</code> when behind OpenShift router or any reverse proxy.</td>
+            <td><span class="badge badge--amber">runtime error</span></td>
+          </tr>
+          <tr>
+            <td>Postgres healthcheck slow on first boot</td>
+            <td class="dim">Keycloak has a <code>start_period: 30s</code> before retries count. On slow machines, increase <code>start_period</code> or <code>retries</code> to avoid premature failure.</td>
+            <td><span class="badge badge--slate">config</span></td>
+          </tr>
+          <tr>
+            <td>Server private key passphrase protected</td>
+            <td class="dim">Keycloak cannot read passphrase-protected private keys at startup. Generate the key without a passphrase (<code>-nodes</code> flag in openssl).</td>
+            <td><span class="badge badge--rose">startup failure</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ══════════════════════════════════════════
+       10. IMPLEMENTATION NOTES
+  ══════════════════════════════════════════ -->
+  <section class="anim" style="--i:10">
+    <div class="section-label">§ 10 — Implementation Notes</div>
+    <h2>Critical Considerations</h2>
+
+    <div class="callout callout--teal">
+      <strong>No custom image required.</strong> All CA and certificate handling is achieved purely through
+      volume mounts and environment variables on the official <code>quay.io/keycloak/keycloak:26.6.1</code> image.
+      <code>KC_TRUSTSTORE_PATHS</code> supports entire directories — drop files in, restart, done.
+    </div>
+
+    <div class="callout callout--amber">
+      <strong>Management port :9000 is always plain HTTP.</strong> The health endpoint
+      <code>GET http://127.0.0.1:9000/health/ready</code> does not use TLS even when HTTPS is enabled on :8443.
+      The compose healthcheck uses <code>/dev/tcp</code> directly — no curl binary needed inside the container.
+    </div>
+
+    <div class="callout callout--rose">
+      <strong>mTLS=required breaks all non-cert callers.</strong> Use <code>KC_HTTPS_CLIENT_AUTH=request</code>
+      during development so browser-based admin and OIDC flows still work. Only switch to <code>required</code>
+      on a separate Route/ingress path where all clients can supply a certificate.
+    </div>
+
+    <div class="callout callout--amber">
+      <strong>OIDC multi-domain issuer constraint.</strong> When <code>KC_HOSTNAME_STRICT=false</code> and no
+      fixed <code>KC_HOSTNAME</code> is set, Keycloak derives the issuer from the incoming <code>Host</code> header.
+      OIDC clients <em>must</em> use discovery, authorization, token, and issuer validation for the exact same
+      domain they entered through — cross-domain token reuse will fail issuer validation.
+    </div>
+
+    <div class="callout callout--rose">
+      <strong>Truststore password in environment.</strong> <code>KC_HTTPS_TRUST_STORE_PASSWORD</code> and
+      <code>POSTGRES_PASSWORD</code> are set as environment variables — acceptable for a local playground.
+      In production, use Kubernetes Secrets or a secrets manager (Vault, AWS Secrets Manager, etc.) and
+      never commit <code>.env</code> files containing real passwords.
+    </div>
+
+    <div class="callout callout--teal">
+      <strong>start-dev vs start.</strong> <code>start-dev</code> skips the build/optimisation phase — it's fast
+      for iteration but is not production-hardened. Switch to <code>KEYCLOAK_START_COMMAND=start</code> plus
+      <code>KC_HOSTNAME</code> (or <code>KC_HOSTNAME_STRICT=false</code>) before any real deployment.
+      Postgres is used in both modes.
+    </div>
+  </section>
+
+</div><!-- /container -->
+
+<!-- ══════════════════════════════════════════
+     MERMAID + ZOOM/PAN ENGINE
+══════════════════════════════════════════ -->
+<script type="module">
+import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+import elkLayouts from 'https://cdn.jsdelivr.net/npm/@mermaid-js/layout-elk/dist/mermaid-layout-elk.esm.min.mjs';
+
+const cfg = {
+  fitPadding: 28,
+  minHeight: 380,
+  maxHeightPx: 960,
+  maxHeightVh: 0.85,
+  maxInitialZoom: 1.8,
+  minZoom: 0.08,
+  maxZoom: 6.5,
+  zoomStep: 0.14,
+  readabilityFloor: 0.56
+};
+
+const clamp = (n, lo, hi) => Math.max(lo, Math.min(hi, n));
+let activeDrag = null;
+
+addEventListener('mousemove', e => activeDrag?.onMove(e));
+addEventListener('mouseup', () => { activeDrag?.onEnd(); activeDrag = null; });
+
+const isDark = matchMedia('(prefers-color-scheme: dark)').matches;
+
+mermaid.registerLayoutLoaders(elkLayouts);
+mermaid.initialize({
+  startOnLoad: false,
+  theme: 'base',
+  look: 'classic',
+  layout: 'elk',
+  themeVariables: {
+    fontFamily: "'IBM Plex Sans', system-ui, sans-serif",
+    fontSize: '15px',
+    primaryColor:       isDark ? '#1a2e48' : '#e0f2fe',
+    primaryBorderColor: isDark ? '#22d3ee' : '#0891b2',
+    primaryTextColor:   isDark ? '#dce8f5' : '#0c1931',
+    secondaryColor:       isDark ? '#1e2a10' : '#f0fdf4',
+    secondaryBorderColor: isDark ? '#34d399' : '#15803d',
+    secondaryTextColor:   isDark ? '#dce8f5' : '#0c1931',
+    tertiaryColor:       isDark ? '#2a1f08' : '#fffbeb',
+    tertiaryBorderColor: isDark ? '#fbbf24' : '#b45309',
+    tertiaryTextColor:   isDark ? '#dce8f5' : '#0c1931',
+    lineColor:           isDark ? '#7ea3c5' : '#4a5d7a',
+    clusterBkg:          isDark ? '#0f1f33' : '#f0f4f9',
+    clusterBorder:       isDark ? '#22d3ee' : '#0891b2',
+    titleColor:          isDark ? '#dce8f5' : '#0c1931',
+  }
+});
+
+function initDiagram(shell) {
+  const wrap     = shell.querySelector('.mermaid-wrap');
+  const viewport = shell.querySelector('.mermaid-viewport');
+  const canvas   = shell.querySelector('.mermaid-canvas');
+  const source   = shell.querySelector('.diagram-source');
+  const label    = shell.querySelector('.zoom-label');
+  if (!wrap || !viewport || !canvas || !source || !label) return;
+
+  let zoom = 1, fitMode = 'contain', panX = 0, panY = 0, svgW = 0, svgH = 0;
+  let sx = 0, sy = 0, spx = 0, spy = 0, touchDist = 0, touchCx = 0, touchCy = 0;
+
+  function constrainPan() {
+    const vpW = viewport.clientWidth, vpH = viewport.clientHeight;
+    const rW = svgW * zoom, rH = svgH * zoom, pad = cfg.fitPadding;
+    panX = (rW + pad*2 <= vpW) ? (vpW - rW)/2 : clamp(panX, vpW - rW - pad, pad);
+    panY = (rH + pad*2 <= vpH) ? (vpH - rH)/2 : clamp(panY, vpH - rH - pad, pad);
+  }
+
+  function applyTransform() {
+    const svg = canvas.querySelector('svg');
+    if (!svg || !svgW) return;
+    constrainPan();
+    svg.style.width  = (svgW * zoom) + 'px';
+    svg.style.height = (svgH * zoom) + 'px';
+    canvas.style.transform = `translate(${panX}px,${panY}px)`;
+    label.textContent = Math.round(zoom * 100) + '% \u2014 ' + fitMode;
+  }
+
+  function canPan() {
+    return svgW * zoom + cfg.fitPadding*2 > viewport.clientWidth
+        || svgH * zoom + cfg.fitPadding*2 > viewport.clientHeight;
+  }
+
+  function computeSmartFit() {
+    const vpW = viewport.clientWidth, vpH = viewport.clientHeight;
+    const aW = Math.max(80, vpW - cfg.fitPadding*2), aH = Math.max(80, vpH - cfg.fitPadding*2);
+    const contain = Math.min(aW / svgW, aH / svgH);
+    let z = contain, mode = 'contain';
+    if (contain < cfg.readabilityFloor) {
+      const cR = svgH / svgW, vR = vpH / Math.max(vpW, 1);
+      if (cR >= vR) { z = aW / svgW; mode = 'width-priority'; }
+      else          { z = aH / svgH; mode = 'height-priority'; }
+    }
+    return { zoom: clamp(z, cfg.minZoom, cfg.maxInitialZoom), mode };
+  }
+
+  function fitDiagram() {
+    if (!svgW) return;
+    const f = computeSmartFit();
+    zoom = f.zoom; fitMode = f.mode;
+    panX = (viewport.clientWidth  - svgW * zoom) / 2;
+    panY = (viewport.clientHeight - svgH * zoom) / 2;
+    applyTransform();
+  }
+
+  function setOneToOne() {
+    zoom = clamp(1, cfg.minZoom, cfg.maxZoom); fitMode = '1:1';
+    panX = (viewport.clientWidth  - svgW * zoom) / 2;
+    panY = (viewport.clientHeight - svgH * zoom) / 2;
+    applyTransform();
+  }
+
+  function zoomAround(factor, cx, cy) {
+    const next = clamp(zoom * factor, cfg.minZoom, cfg.maxZoom);
+    const ratio = next / zoom;
+    panX = cx - ratio * (cx - panX);
+    panY = cy - ratio * (cy - panY);
+    zoom = next; fitMode = 'custom';
+    applyTransform();
+  }
+
+  function readSvgSize(svg) {
+    let w = 0, h = 0;
+    if (svg.viewBox?.baseVal?.width > 0) { w = svg.viewBox.baseVal.width; h = svg.viewBox.baseVal.height; }
+    if (!w) { w = parseFloat(svg.getAttribute('width')) || 0; h = parseFloat(svg.getAttribute('height')) || 0; }
+    if (!w) { const b = svg.getBBox(); w = b.width; h = b.height; }
+    if (!w) { const r = svg.getBoundingClientRect(); w = r.width || 900; h = r.height || 600; }
+    if (!svg.getAttribute('viewBox')) svg.setAttribute('viewBox', `0 0 ${w} ${h}`);
+    return { w, h };
+  }
+
+  function setAdaptiveHeight() {
+    if (!svgW) return;
+    const usableW = Math.max(280, wrap.getBoundingClientRect().width - 2);
+    const idealH  = (svgH / svgW) * usableW + cfg.fitPadding * 2;
+    const maxVp   = Math.floor(innerHeight * cfg.maxHeightVh);
+    const hardMax = Math.min(cfg.maxHeightPx, Math.max(cfg.minHeight + 40, maxVp));
+    wrap.style.height = Math.round(clamp(idealH, cfg.minHeight, hardMax)) + 'px';
+  }
+
+  function openInNewTab() {
+    const svg = canvas.querySelector('svg');
+    if (!svg) return;
+    const clone = svg.cloneNode(true);
+    clone.style.width = clone.style.height = '';
+    const bg = isDark ? '#0c1829' : '#f0f4f9';
+    const html = `<!DOCTYPE html><html><head><meta charset="UTF-8">
+<style>body{margin:0;min-height:100vh;display:flex;align-items:center;
+justify-content:center;background:${bg};padding:40px;box-sizing:border-box}
+svg{max-width:100%;max-height:90vh;height:auto}</style></head>
+<body>${clone.outerHTML}</body></html>`;
+    open(URL.createObjectURL(new Blob([html], { type: 'text/html' })), '_blank');
+  }
+
+  async function render() {
+    try {
+      const code = source.textContent.trim();
+      if (!code) { label.textContent = 'Error: empty source'; return; }
+      const id = 'kc-diag-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8);
+      const { svg } = await mermaid.render(id, code);
+      canvas.innerHTML = svg;
+      const svgNode = canvas.querySelector('svg');
+      if (!svgNode) { label.textContent = 'Error: no SVG'; return; }
+      const s = readSvgSize(svgNode);
+      svgW = s.w; svgH = s.h;
+      svgNode.removeAttribute('width');
+      svgNode.removeAttribute('height');
+      svgNode.style.maxWidth = 'none';
+      svgNode.style.display  = 'block';
+      setAdaptiveHeight();
+      fitDiagram();
+    } catch (err) {
+      console.error('Mermaid render failed:', err);
+      label.textContent = 'Error: ' + (err.message || 'render failed');
+    }
+  }
+
+  const actions = {
+    'zoom-in':     () => zoomAround(1 + cfg.zoomStep, viewport.clientWidth/2, viewport.clientHeight/2),
+    'zoom-out':    () => zoomAround(1/(1+cfg.zoomStep), viewport.clientWidth/2, viewport.clientHeight/2),
+    'zoom-fit':    fitDiagram,
+    'zoom-one':    setOneToOne,
+    'zoom-expand': openInNewTab
+  };
+  Object.entries(actions).forEach(([a, fn]) =>
+    wrap.querySelector(`[data-action="${a}"]`)?.addEventListener('click', fn));
+
+  viewport.addEventListener('dblclick', fitDiagram);
+
+  viewport.addEventListener('wheel', e => {
+    if (e.ctrlKey || e.metaKey) {
+      e.preventDefault();
+      const r = viewport.getBoundingClientRect();
+      zoomAround(e.deltaY < 0 ? 1+cfg.zoomStep : 1/(1+cfg.zoomStep), e.clientX - r.left, e.clientY - r.top);
+      return;
+    }
+    if (canPan()) { e.preventDefault(); panX -= e.deltaX; panY -= e.deltaY; applyTransform(); }
+  }, { passive: false });
+
+  viewport.addEventListener('mousedown', e => {
+    if (e.target.closest('.zoom-controls') || !canPan()) return;
+    wrap.classList.add('is-panning');
+    sx = e.clientX; sy = e.clientY; spx = panX; spy = panY;
+    e.preventDefault();
+    activeDrag = {
+      onMove: ev => { panX = spx + (ev.clientX - sx); panY = spy + (ev.clientY - sy); applyTransform(); },
+      onEnd:  ()  => wrap.classList.remove('is-panning')
+    };
+  });
+
+  viewport.addEventListener('touchstart', e => {
+    if (e.touches.length === 1) {
+      sx = e.touches[0].clientX; sy = e.touches[0].clientY; spx = panX; spy = panY;
+    } else if (e.touches.length === 2) {
+      const dx = e.touches[0].clientX - e.touches[1].clientX;
+      const dy = e.touches[0].clientY - e.touches[1].clientY;
+      touchDist = Math.sqrt(dx*dx + dy*dy);
+      const r = viewport.getBoundingClientRect();
+      touchCx = (e.touches[0].clientX + e.touches[1].clientX)/2 - r.left;
+      touchCy = (e.touches[0].clientY + e.touches[1].clientY)/2 - r.top;
+    }
+  }, { passive: true });
+
+  viewport.addEventListener('touchmove', e => {
+    if (e.touches.length === 1 && canPan()) {
+      if (touchDist > 0) { sx = e.touches[0].clientX; sy = e.touches[0].clientY; spx = panX; spy = panY; touchDist = 0; }
+      e.preventDefault();
+      panX = spx + (e.touches[0].clientX - sx);
+      panY = spy + (e.touches[0].clientY - sy);
+      applyTransform();
+    } else if (e.touches.length === 2 && touchDist > 0) {
+      e.preventDefault();
+      const dx = e.touches[0].clientX - e.touches[1].clientX;
+      const dy = e.touches[0].clientY - e.touches[1].clientY;
+      const d  = Math.sqrt(dx*dx + dy*dy);
+      zoomAround(d / touchDist, touchCx, touchCy);
+      touchDist = d;
+    }
+  }, { passive: false });
+
+  new ResizeObserver(() => { if (svgW) { setAdaptiveHeight(); fitDiagram(); } }).observe(wrap);
+
+  render();
+}
+
+document.querySelectorAll('.diagram-shell').forEach(initDiagram);
+</script>
+
+</body>
+</html>

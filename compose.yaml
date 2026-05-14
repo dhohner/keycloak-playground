@@ -1,0 +1,82 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: keycloak-postgres
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-keycloak}
+      POSTGRES_USER: ${POSTGRES_USER:-keycloak}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-keycloak}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.6.1
+    container_name: keycloak-playground
+    command:
+      - ${KEYCLOAK_START_COMMAND:-start-dev}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: ${KC_BOOTSTRAP_ADMIN_USERNAME:-admin}
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KC_BOOTSTRAP_ADMIN_PASSWORD:-admin}
+
+      KC_DB: postgres
+      KC_DB_URL_HOST: postgres
+      KC_DB_URL_PORT: "5432"
+      KC_DB_URL_DATABASE: ${POSTGRES_DB:-keycloak}
+      KC_DB_USERNAME: ${POSTGRES_USER:-keycloak}
+      KC_DB_PASSWORD: ${POSTGRES_PASSWORD:-keycloak}
+
+      KC_HEALTH_ENABLED: "true"
+      KC_METRICS_ENABLED: "true"
+
+      KC_HTTP_ENABLED: "false"
+      KC_HTTPS_PORT: "8443"
+      KC_HTTPS_CERTIFICATE_FILE: /opt/keycloak/conf/tls/tls.crt
+      KC_HTTPS_CERTIFICATE_KEY_FILE: /opt/keycloak/conf/tls/tls.key
+
+      # mTLS. Use "request" while developing so admin/UI still works without a client cert.
+      # Change to "required" when every caller must present a trusted client cert.
+      KC_HTTPS_CLIENT_AUTH: ${KC_HTTPS_CLIENT_AUTH:-request}
+      KC_HTTPS_TRUST_STORE_FILE: /opt/keycloak/conf/mtls/client-truststore.p12
+      KC_HTTPS_TRUST_STORE_PASSWORD: ${KC_HTTPS_TRUST_STORE_PASSWORD:-changeit}
+
+      # Trust custom/internal CA certs for Keycloak outbound HTTPS traffic.
+      # Put PEM/CRT or PKCS12 files under ./certs/internal-ca/.
+      KC_TRUSTSTORE_PATHS: /opt/keycloak/conf/truststores/internal-ca
+
+      # For production mode set KEYCLOAK_START_COMMAND=start and provide KC_HOSTNAME.
+      KC_HOSTNAME: ${KC_HOSTNAME:-localhost}
+      KC_HOSTNAME_STRICT: ${KC_HOSTNAME_STRICT:-false}
+      KC_PROXY_HEADERS: xforwarded
+    ports:
+      - "8443:8443"
+      - "9000:9000"
+    volumes:
+      - ./certs/server/tls.crt:/opt/keycloak/conf/tls/tls.crt:ro
+      - ./certs/server/tls.key:/opt/keycloak/conf/tls/tls.key:ro
+      - ./certs/client-ca/client-truststore.p12:/opt/keycloak/conf/mtls/client-truststore.p12:ro
+      - ./certs/internal-ca:/opt/keycloak/conf/truststores/internal-ca:ro
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          /bin/bash -ec 'exec 3<>/dev/tcp/127.0.0.1/9000;
+          printf "GET /health/ready HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n" >&3;
+          grep -q "200 OK" <&3'
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
+
+volumes:
+  postgres-data:
