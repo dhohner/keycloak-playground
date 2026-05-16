@@ -1,0 +1,29 @@
+services:
+  keycloak-config-cli:
+    image: quay.io/adorsys/keycloak-config-cli:latest
+    environment:
+      KEYCLOAK_URL: https://keycloak:8443
+      KEYCLOAK_LOGINREALM: ${KEYCLOAK_CONFIG_CLI_LOGIN_REALM:-master}
+      KEYCLOAK_CLIENTID: ${KEYCLOAK_CONFIG_CLI_CLIENT_ID:-keycloak-config-cli}
+      KEYCLOAK_CLIENTSECRET: ${KEYCLOAK_CONFIG_CLI_CLIENT_SECRET:-changeit}
+      KEYCLOAK_GRANTTYPE: client_credentials
+      KEYCLOAK_AVAILABILITYCHECK_ENABLED: "true"
+      KEYCLOAK_AVAILABILITYCHECK_TIMEOUT: 20s
+      IMPORT_FILES_LOCATIONS: /config/*.yaml
+      JAVA_OPTS: >-
+        -Djavax.net.ssl.trustStore=/certs/trust/keycloak-truststore.p12
+        -Djavax.net.ssl.trustStorePassword=${KEYCLOAK_CONFIG_CLI_TRUSTSTORE_PASSWORD:-changeit}
+        -Djavax.net.ssl.trustStoreType=PKCS12
+    volumes:
+      - ${PWD}/config-as-code/keycloak-config-cli/realms:/config:ro
+      - ${PWD}/certs/config-cli/keycloak-truststore.p12:/certs/trust/keycloak-truststore.p12:ro
+    networks:
+      keycloak-playground:
+        aliases:
+          - keycloak-config-cli
+    restart: "no"
+
+networks:
+  keycloak-playground:
+    name: keycloak-playground
+    external: true
