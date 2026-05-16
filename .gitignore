@@ -1,7 +1,8 @@
 .env
 tls.*
-client-ca.*
-client-truststore.*
-server-keystore.*
-server-truststore.*
+*.crt
+*.csr
+*.key
+*.p12
+*.srl
 logs/
