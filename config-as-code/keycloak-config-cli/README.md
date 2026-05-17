@@ -56,22 +56,27 @@ keytool -importcert -noprompt \
 
 ## How to: Run the import
 
-Run the CLI as an additional Compose service. From the project root:
+Run the CLI as a one-shot Compose container. From the project root:
 
 ```bash
-docker compose \
-  -f compose.yaml \
-  -f config-as-code/keycloak-config-cli/compose.yaml \
-  up keycloak-config-cli
+scripts/compose.sh config-apply
 ```
 
-The service exits after the import completes (`restart: "no"`). Check the logs to confirm success:
+Enable action/component debug logs for a single run:
 
 ```bash
-docker compose \
-  -f compose.yaml \
-  -f config-as-code/keycloak-config-cli/compose.yaml \
-  logs keycloak-config-cli
+scripts/compose.sh config-apply --debug
+# or
+KEYCLOAK_CONFIG_CLI_COMPONENT_LOG_LEVEL=debug scripts/compose.sh config-apply
+# direct container env also works:
+LOGGING_LEVEL_KEYCLOAKCONFIGCLI=debug scripts/compose.sh config-apply
+```
+
+The container exits after the import completes and is removed. For troubleshooting, run it without `--rm` using raw Compose args, then inspect logs:
+
+```bash
+scripts/compose.sh --config-cli up keycloak-config-cli
+scripts/compose.sh config-logs
 ```
 
 ## Reference: Compose configuration
@@ -84,6 +89,11 @@ docker compose \
 | `KEYCLOAK_CONFIG_CLI_CLIENT_ID`           | `keycloak-config-cli` | OIDC client ID                        |
 | `KEYCLOAK_CONFIG_CLI_CLIENT_SECRET`       | `changeit`            | client secret                         |
 | `KEYCLOAK_CONFIG_CLI_TRUSTSTORE_PASSWORD` | `changeit`            | password for the server CA truststore |
+| `KEYCLOAK_CONFIG_CLI_DEBUG`               | `false`               | Spring Boot debug mode                |
+| `KEYCLOAK_CONFIG_CLI_LOG_LEVEL`           | `info`                | root logging level (`debug`, `info`)  |
+| `KEYCLOAK_CONFIG_CLI_COMPONENT_LOG_LEVEL` | `info`                | `de.adorsys.keycloak.config` component/action logs |
+| `KEYCLOAK_CONFIG_CLI_HTTP_LOG_LEVEL`      | `info`                | HTTP request logs to Keycloak         |
+| `KEYCLOAK_CONFIG_CLI_REALM_CONFIG_LOG_LEVEL` | `info`             | realm config logs; `trace` may expose sensitive data |
 
 `KEYCLOAK_URL` is hardcoded to `https://keycloak:8443`. The CLI joins the external Compose network `keycloak-playground`, where `keycloak` resolves to the Keycloak service/container. Keycloak's server certificate must include `DNS:keycloak` as a SAN.
 

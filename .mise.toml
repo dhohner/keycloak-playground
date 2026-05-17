@@ -1,0 +1,97 @@
+# Project automation: https://mise.jdx.dev/configuration.html
+
+[env]
+_.file = ".env"
+
+[tasks.help]
+quiet = true
+description = "Show available project mise tasks"
+run = "mise tasks"
+
+[shell_alias]
+help = "mise run help"
+certs = "mise run certs"
+certs-regen = "mise run certs:regen"
+certs-regen-all = "mise run certs:regen:all"
+start = "mise run start"
+stop = "mise run stop"
+logs = "mise run logs"
+config = "mise run config:apply"
+config-with-debug = "mise run config:apply:debug"
+
+[tasks."ca:server"]
+quiet = true
+description = "Generate local development CA for Keycloak server TLS if missing"
+run = "scripts/certs.sh server-ca"
+
+[tasks."ca:client"]
+quiet = true
+description = "Generate local development CA for client certificate signing if missing"
+run = "scripts/certs.sh client-ca"
+
+[tasks."ca:all"]
+quiet = true
+description = "Generate local development server and client CAs if missing"
+run = "scripts/certs.sh local-ca"
+
+[tasks."certs:server"]
+quiet = true
+description = "Create Keycloak server TLS certificate if missing"
+run = "scripts/certs.sh server-cert"
+
+[tasks."certs:client-truststore"]
+quiet = true
+description = "Create Keycloak inbound client certificate truststore if missing"
+run = "scripts/certs.sh client-truststore"
+
+[tasks.certs]
+quiet = true
+description = "Create required local development certificates and truststores if missing"
+run = "scripts/certs.sh all"
+
+[tasks."certs:regen"]
+quiet = true
+description = "Regenerate local certificates while keeping the existing server CA"
+run = "scripts/certs.sh regen"
+
+[tasks."certs:regen:all"]
+quiet = true
+description = "Regenerate local certificates including the server CA"
+run = "scripts/certs.sh regen --regenerate-server-ca"
+
+[tasks."certs:config-cli-truststore"]
+quiet = true
+description = "Create config-as-code truststore from the local Keycloak server CA if missing"
+run = "scripts/certs.sh config-cli-truststore"
+
+[tasks.start]
+quiet = true
+description = "Start Keycloak and Postgres"
+run = "scripts/compose.sh start"
+
+[tasks.logs]
+quiet = true
+description = "Follow Keycloak logs"
+run = "scripts/compose.sh logs || true"
+
+[tasks.stop]
+quiet = true
+description = "Stop Keycloak and Postgres"
+run = "scripts/compose.sh stop"
+
+[tasks."config:apply"]
+quiet = true
+description = "Apply config-as-code realm configuration with keycloak-config-cli"
+depends = ["certs:config-cli-truststore"]
+run = "scripts/compose.sh config-apply"
+
+[tasks."config:apply:debug"]
+quiet = true
+description = "Apply config-as-code realm configuration with debug logs"
+depends = ["certs:config-cli-truststore"]
+run = "scripts/compose.sh config-apply --debug"
+
+[tasks."config:logs"]
+quiet = true
+description = "Follow config-as-code logs"
+run = "scripts/compose.sh config-logs || true"

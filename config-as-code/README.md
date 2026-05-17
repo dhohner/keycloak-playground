@@ -36,10 +36,7 @@ keycloak-config-cli and Terraform both manage client billing-worker
 Run the config import service alongside the base stack by merging Compose files:
 
 ```bash
-docker compose \
-  -f compose.yaml \
-  -f config-as-code/keycloak-config-cli/compose.yaml \
-  up
+scripts/compose.sh --config-cli up
 ```
 
 See [`keycloak-config-cli/README.md`](keycloak-config-cli/README.md) for setup and usage.

@@ -39,6 +39,7 @@ services:
       KC_HEALTH_ENABLED: "true"
       KC_METRICS_ENABLED: "true"
       KC_HTTP_MANAGEMENT_SCHEME: http
+      KC_LOG_CONSOLE_COLOR: ${KC_LOG_CONSOLE_COLOR:-true}
 
       KC_HTTP_ENABLED: "false"
       KC_HTTPS_PORT: "8443"
@@ -56,7 +57,6 @@ services:
       KC_TRUSTSTORE_PATHS: /opt/keycloak/conf/truststores/internal-ca
 
       # For production mode set KEYCLOAK_START_COMMAND=start and provide KC_HOSTNAME.
-      KC_HOSTNAME: ${KC_HOSTNAME:-localhost}
       KC_HOSTNAME_STRICT: ${KC_HOSTNAME_STRICT:-false}
       KC_PROXY_HEADERS: xforwarded
     ports:

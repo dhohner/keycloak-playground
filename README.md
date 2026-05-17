@@ -37,7 +37,7 @@ No custom Keycloak image is used.
 
 ## Quick start
 
-**Prerequisites:** Docker or Podman with Compose support.
+**Prerequisites:** Docker or Podman with Compose support. Optional: [mise](https://mise.jdx.dev/) for task shortcuts.
 
 1. Copy the environment file.
 
@@ -47,15 +47,19 @@ cp .env.example .env
 
 2. Generate certificates — see [Generate local dev certs](#generate-local-dev-certs).
 
+```bash
+mise run certs
+```
+
 3. Start the stack.
 
 ```bash
-docker compose up -d
-docker compose logs -f keycloak
+mise run start
+mise run logs
 
-# Podman
-podman-compose up -d
-podman-compose logs -f keycloak
+# Without mise
+scripts/compose.sh start
+scripts/compose.sh logs
 ```
 
 4. Open the admin UI at `https://localhost:8443`.
@@ -87,6 +91,46 @@ Optional — add trusted CAs for Keycloak outbound HTTPS:
 certs/internal-ca/*.crt
 certs/internal-ca/*.pem
 ```
+
+## Mise tasks
+
+This repo includes `.mise.toml` tasks for common setup and operations.
+
+```bash
+mise run help
+```
+
+| task                              | purpose                                                         |
+| --------------------------------- | --------------------------------------------------------------- |
+| `help`                            | show available mise tasks                                       |
+| `ca:server`                       | generate local server TLS CA                                    |
+| `ca:client`                       | generate local client-signing CA                                |
+| `ca:all`                          | generate both local CAs                                         |
+| `certs:server`                    | create Keycloak server TLS certificate                          |
+| `certs:client-truststore`         | create Keycloak inbound client certificate truststore           |
+| `certs`                           | create required local certs and Keycloak client truststore      |
+| `certs:regen`                     | regenerate local certs while keeping the existing server CA     |
+| `certs:regen:all`                 | regenerate local certs including the server CA                  |
+| `certs:config-cli-truststore`     | create truststore used by keycloak-config-cli                   |
+| `start`                           | start Keycloak and Postgres with Docker Compose                 |
+| `stop`                            | stop Keycloak and Postgres                                      |
+| `logs`                            | follow Keycloak logs                                            |
+| `config:apply`                    | run keycloak-config-cli and apply config-as-code realm settings |
+| `config:apply:debug`              | run keycloak-config-cli with debug logging                      |
+| `config:logs`                     | follow keycloak-config-cli logs                                 |
+
+Task implementations live in `scripts/*.sh` so certificate and Compose logic stays testable and maintainable. Certificate tasks are centralized in `scripts/certs.sh`.
+
+Certificate generation can be customized with env vars such as `CERTS_DIR`, `SERVER_CERT_SAN`, `TRUSTSTORE_PASSWORD`, `SERVER_CA_DAYS`, `CLIENT_CA_DAYS`, `SERVER_CERT_DAYS`, and `KEY_SIZE`.
+
+Shell aliases use mise `[shell_alias]` and are auto-managed when your shell runs `mise activate`. For example, `start`, `logs`, and `config` map to `mise run start`, `mise run logs`, and `mise run config:apply`.
+
+Compose commands use `scripts/compose.sh`, which provides shortcuts like `start`, `stop`, `logs`, and `config-apply`, plus passthrough Compose args. It selects the first available runtime:
+
+1. `COMPOSE_CMD` override, for example `COMPOSE_CMD="docker compose" mise run start`
+2. `podman-compose`
+3. Docker Compose v2: `docker compose`
+4. legacy `docker-compose`
 
 ## Generate local dev certs
 
@@ -339,6 +383,7 @@ Defaults are set in `.env.example`. Copy to `.env` to override.
 | `KC_HOSTNAME_STRICT`            | `false`     | set `true` to reject requests on other hostnames         |
 | `KC_HTTPS_CLIENT_AUTH`          | `request`   | `request` = optional client cert, `required` = hard mTLS |
 | `KC_HTTPS_TRUST_STORE_PASSWORD` | `changeit`  | password for the client truststore                       |
+| `KC_LOG_CONSOLE_COLOR`          | `true`      | enable Keycloak ANSI-colored console logs                |
 | `POSTGRES_DB`                   | `keycloak`  | database name                                            |
 | `POSTGRES_USER`                 | `keycloak`  | database user                                            |
 | `POSTGRES_PASSWORD`             | `keycloak`  | database password                                        |
