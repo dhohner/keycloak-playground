@@ -15,12 +15,15 @@ Commands:
   server-cert                   Generate server TLS cert if missing
   client-truststore             Generate Keycloak client truststore if missing
   config-cli-truststore         Generate config-cli truststore if missing
+  terraform                     Generate Terraform provider mTLS certificate if missing
+  terraform-client-cert         Alias for terraform
   all                           Generate required certs/truststores if missing
   regen [--regenerate-server-ca] Regenerate local certs; keeps server CA by default
 
 Config via env:
   CERTS_DIR, SERVER_CERT_SAN, TRUSTSTORE_PASSWORD, SERVER_CA_DAYS,
-  CLIENT_CA_DAYS, SERVER_CERT_DAYS, KEY_SIZE
+  CLIENT_CA_DAYS, SERVER_CERT_DAYS, KEY_SIZE,
+  TERRAFORM_CLIENT_CERT_CN, TERRAFORM_CLIENT_CERT_DAYS
 USAGE
 }
 
@@ -127,6 +130,37 @@ generate_config_cli_truststore() {
     -storepass "$TRUSTSTORE_PASSWORD"
 }
 
+generate_terraform_client_cert() {
+  require_cmd openssl
+  ensure_dir "$TERRAFORM_CLIENT_CERT_DIR"
+
+  if exists_all "$TERRAFORM_CLIENT_CERT_DIR/terraform-provider.crt" "$TERRAFORM_CLIENT_CERT_DIR/terraform-provider.key"; then
+    log "Terraform provider mTLS client certificate exists; skipping"
+  else
+    exists_all "$CLIENT_CA_DIR/client-ca.crt" "$CLIENT_CA_DIR/client-ca.key" || \
+      fatal "missing client CA; run: mise run ca:client"
+
+    openssl req -newkey "rsa:${KEY_SIZE}" -nodes \
+      -keyout "$TERRAFORM_CLIENT_CERT_DIR/terraform-provider.key" \
+      -out "$TERRAFORM_CLIENT_CERT_DIR/terraform-provider.csr" \
+      -subj "/CN=${TERRAFORM_CLIENT_CERT_CN}"
+
+    cat > "$TERRAFORM_CLIENT_CERT_DIR/terraform-provider.ext" <<EXT
+basicConstraints=critical,CA:FALSE
+keyUsage=critical,digitalSignature
+extendedKeyUsage=clientAuth
+EXT
+
+    openssl x509 -req -days "$TERRAFORM_CLIENT_CERT_DAYS" \
+      -in "$TERRAFORM_CLIENT_CERT_DIR/terraform-provider.csr" \
+      -CA "$CLIENT_CA_DIR/client-ca.crt" \
+      -CAkey "$CLIENT_CA_DIR/client-ca.key" \
+      -CAcreateserial \
+      -out "$TERRAFORM_CLIENT_CERT_DIR/terraform-provider.crt" \
+      -extfile "$TERRAFORM_CLIENT_CERT_DIR/terraform-provider.ext"
+  fi
+}
+
 regenerate() {
   local regenerate_server_ca=false
 
@@ -148,7 +182,14 @@ regenerate() {
     "$CLIENT_CA_DIR/client-ca.key" \
     "$CLIENT_CA_DIR/client-ca.srl" \
     "$CLIENT_CA_DIR/client-truststore.p12" \
-    "$CONFIG_CLI_CERT_DIR/keycloak-truststore.p12"
+    "$CONFIG_CLI_CERT_DIR/keycloak-truststore.p12" \
+    "$TERRAFORM_CLIENT_CERT_DIR/terraform-provider.crt" \
+    "$TERRAFORM_CLIENT_CERT_DIR/terraform-provider.key" \
+    "$TERRAFORM_CLIENT_CERT_DIR/terraform-provider.csr" \
+    "$TERRAFORM_CLIENT_CERT_DIR/terraform-provider.ext" \
+    "$TERRAFORM_CLIENT_CERT_DIR/jwt-signing.key" \
+    "$TERRAFORM_CLIENT_CERT_DIR/jwt-signing.crt" \
+    "$TERRAFORM_CLIENT_CERT_DIR/jwt-signing.pub"
 
   if [[ "$regenerate_server_ca" == true ]]; then
     remove_files \
@@ -161,6 +202,7 @@ regenerate() {
   generate_client_ca
   generate_server_cert
   generate_client_truststore
+  generate_terraform_client_cert
 }
 
 main() {
@@ -175,6 +217,7 @@ main() {
     server-cert) generate_server_ca; generate_server_cert ;;
     client-truststore) generate_client_ca; generate_client_truststore ;;
     config-cli-truststore) generate_config_cli_truststore ;;
+    terraform|terraform-client-cert) generate_client_ca; generate_terraform_client_cert ;;
     all) generate_server_ca; generate_client_ca; generate_server_cert; generate_client_truststore ;;
     regen) regenerate "$@" ;;
     -h|--help|help) usage ;;

@@ -18,6 +18,9 @@ stop = "mise run stop"
 logs = "mise run logs"
 config = "mise run config:apply"
 config-with-debug = "mise run config:apply:debug"
+terraform-init = "mise run terraform:init"
+terraform-plan = "mise run terraform:plan"
+terraform-apply = "mise run terraform:apply"
 
 [tasks."ca:server"]
 quiet = true
@@ -64,6 +67,11 @@ quiet = true
 description = "Create config-as-code truststore from the local Keycloak server CA if missing"
 run = "scripts/certs.sh config-cli-truststore"
 
+[tasks."certs:terraform"]
+quiet = true
+description = "Create Terraform provider mTLS certificate if missing"
+run = "scripts/certs.sh terraform"
+
 [tasks.start]
 quiet = true
 description = "Start Keycloak and Postgres"
@@ -95,3 +103,20 @@ run = "scripts/compose.sh config-apply --debug"
 quiet = true
 description = "Follow config-as-code logs"
 run = "scripts/compose.sh config-logs || true"
+
+[tasks."terraform:init"]
+quiet = true
+description = "Initialize Terraform Keycloak provider config"
+run = "terraform -chdir=config-as-code/terraform init"
+
+[tasks."terraform:plan"]
+quiet = true
+description = "Plan Terraform Keycloak provider changes"
+depends = ["certs:terraform"]
+run = "terraform -chdir=config-as-code/terraform plan"
+
+[tasks."terraform:apply"]
+quiet = true
+description = "Apply Terraform Keycloak provider changes"
+depends = ["certs:terraform"]
+run = "terraform -chdir=config-as-code/terraform apply"
