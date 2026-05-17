@@ -14,7 +14,7 @@ This repository is for learning and local experiments. Defaults are intentionall
 ```text
 browser / API client  ──HTTPS──────────────────────▶ Keycloak ──▶ Postgres
 machine client        ──HTTPS + client cert─────────▶ Keycloak token endpoint
-config-as-code tool   ──HTTPS + client secret───────▶ Keycloak Admin API
+config-as-code tool   ──HTTPS + client secret────────▶ Keycloak Admin API
 ```
 
 | concept              | meaning                                                                |
@@ -100,30 +100,34 @@ This repo includes `.mise.toml` tasks for common setup and operations.
 mise run help
 ```
 
-| task                              | purpose                                                         |
-| --------------------------------- | --------------------------------------------------------------- |
-| `help`                            | show available mise tasks                                       |
-| `ca:server`                       | generate local server TLS CA                                    |
-| `ca:client`                       | generate local client-signing CA                                |
-| `ca:all`                          | generate both local CAs                                         |
-| `certs:server`                    | create Keycloak server TLS certificate                          |
-| `certs:client-truststore`         | create Keycloak inbound client certificate truststore           |
-| `certs`                           | create required local certs and Keycloak client truststore      |
-| `certs:regen`                     | regenerate local certs while keeping the existing server CA     |
-| `certs:regen:all`                 | regenerate local certs including the server CA                  |
-| `certs:config-cli-truststore`     | create truststore used by keycloak-config-cli                   |
-| `start`                           | start Keycloak and Postgres with Docker Compose                 |
-| `stop`                            | stop Keycloak and Postgres                                      |
-| `logs`                            | follow Keycloak logs                                            |
-| `config:apply`                    | run keycloak-config-cli and apply config-as-code realm settings |
-| `config:apply:debug`              | run keycloak-config-cli with debug logging                      |
-| `config:logs`                     | follow keycloak-config-cli logs                                 |
+| task                          | purpose                                                         |
+| ----------------------------- | --------------------------------------------------------------- |
+| `help`                        | show available mise tasks                                       |
+| `ca:server`                   | generate local server TLS CA                                    |
+| `ca:client`                   | generate local client-signing CA                                |
+| `ca:all`                      | generate both local CAs                                         |
+| `certs:server`                | create Keycloak server TLS certificate                          |
+| `certs:client-truststore`     | create Keycloak inbound client certificate truststore           |
+| `certs`                       | create required local certs and Keycloak client truststore      |
+| `certs:regen`                 | regenerate local certs while keeping the existing server CA     |
+| `certs:regen:all`             | regenerate local certs including the server CA                  |
+| `certs:config-cli-truststore` | create truststore used by keycloak-config-cli                   |
+| `certs:terraform`             | create Terraform mTLS certificate for provider transport auth   |
+| `start`                       | start Keycloak and Postgres with Docker Compose                 |
+| `stop`                        | stop Keycloak and Postgres                                      |
+| `logs`                        | follow Keycloak logs                                            |
+| `config:apply`                | run keycloak-config-cli and apply config-as-code realm settings |
+| `config:apply:debug`          | run keycloak-config-cli with debug logging                      |
+| `config:logs`                 | follow keycloak-config-cli logs                                 |
+| `terraform:init`              | initialize Terraform Keycloak provider config                   |
+| `terraform:plan`              | plan Terraform Keycloak provider changes                        |
+| `terraform:apply`             | apply Terraform Keycloak provider changes                       |
 
 Task implementations live in `scripts/*.sh` so certificate and Compose logic stays testable and maintainable. Certificate tasks are centralized in `scripts/certs.sh`.
 
-Certificate generation can be customized with env vars such as `CERTS_DIR`, `SERVER_CERT_SAN`, `TRUSTSTORE_PASSWORD`, `SERVER_CA_DAYS`, `CLIENT_CA_DAYS`, `SERVER_CERT_DAYS`, and `KEY_SIZE`.
+Certificate generation can be customized with env vars such as `CERTS_DIR`, `SERVER_CERT_SAN`, `TRUSTSTORE_PASSWORD`, `SERVER_CA_DAYS`, `CLIENT_CA_DAYS`, `SERVER_CERT_DAYS`, `KEY_SIZE`, `TERRAFORM_CLIENT_CERT_CN`, and `TERRAFORM_CLIENT_CERT_DAYS`.
 
-Shell aliases use mise `[shell_alias]` and are auto-managed when your shell runs `mise activate`. For example, `start`, `logs`, and `config` map to `mise run start`, `mise run logs`, and `mise run config:apply`.
+Shell aliases use mise `[shell_alias]` and are auto-managed when your shell runs `mise activate`. For example, `start`, `logs`, `config`, and `terraform-plan` map to `mise run start`, `mise run logs`, `mise run config:apply`, and `mise run terraform:plan`.
 
 Compose commands use `scripts/compose.sh`, which provides shortcuts like `start`, `stop`, `logs`, and `config-apply`, plus passthrough Compose args. It selects the first available runtime:
 
@@ -235,123 +239,11 @@ Keycloak now trusts client certificates signed by `certs/client-ca/client-ca.crt
 
 ## Config as code
 
-Realm configuration is managed from YAML files instead of the Admin Console.
-
 See [`config-as-code/README.md`](config-as-code/README.md) for the overview and tooling options.
 
----
+The Terraform option lives in [`config-as-code/terraform`](config-as-code/terraform) and is configured to use a Keycloak client secret for OAuth client authentication plus an X.509/mTLS client certificate for the HTTPS transport.
 
-## Add a certificate-authenticated client
-
-Use this pattern for machine clients that authenticate with `client_credentials` and an X.509 certificate. The example uses `billing-worker` as the client ID.
-
-### 1. Choose a certificate subject
-
-```text
-CN=billing-worker
-```
-
-Keep the CN aligned with the X.509 subject DN matcher configured on the Keycloak OIDC client.
-
-### 2. Generate a private key and CSR
-
-```bash
-mkdir -p certs/clients/billing-worker
-
-openssl req -newkey rsa:4096 -nodes \
-  -keyout certs/clients/billing-worker/billing-worker.key \
-  -out certs/clients/billing-worker/billing-worker.csr \
-  -subj "/CN=billing-worker"
-```
-
-### 3. Sign the CSR with the client CA
-
-```bash
-openssl x509 -req -days 365 \
-  -in certs/clients/billing-worker/billing-worker.csr \
-  -CA certs/client-ca/client-ca.crt \
-  -CAkey certs/client-ca/client-ca.key \
-  -CAcreateserial \
-  -out certs/clients/billing-worker/billing-worker.crt
-```
-
-### 4. Create a PKCS12 keystore for the caller
-
-```bash
-openssl pkcs12 -export \
-  -inkey certs/clients/billing-worker/billing-worker.key \
-  -in certs/clients/billing-worker/billing-worker.crt \
-  -certfile certs/client-ca/client-ca.crt \
-  -out certs/clients/billing-worker/billing-worker.p12 \
-  -name billing-worker \
-  -passout pass:changeit
-```
-
-### 5. Create a truststore for the caller (if needed)
-
-Skip this if the caller already trusts `certs/server/server-ca.crt`.
-
-```bash
-keytool -importcert -noprompt \
-  -alias keycloak-server-ca \
-  -file certs/server/server-ca.crt \
-  -keystore certs/clients/billing-worker/keycloak-truststore.p12 \
-  -storetype PKCS12 \
-  -storepass changeit
-```
-
-### 6. Create the Keycloak OIDC client
-
-In the target realm, create an OIDC client with these settings:
-
-| setting                | value                                |
-| ---------------------- | ------------------------------------ |
-| Realm                  | target realm, for example `acme-org` |
-| Client ID              | `billing-worker`                     |
-| Client type            | OpenID Connect                       |
-| Client authentication  | `On`                                 |
-| Standard flow          | `Off` unless needed                  |
-| Direct access grants   | `Off` unless needed                  |
-| Service accounts roles | `On`                                 |
-| Client Authenticator   | X509 certificate                     |
-| Certificate subject DN | `CN=billing-worker`                  |
-
-### 7. Assign service account roles
-
-Grant only required roles to `service-account-billing-worker`.
-
-### 8. Configure the caller
-
-**Java JVM flags:**
-
-```bash
--Djavax.net.ssl.keyStore=/path/to/billing-worker.p12 \
--Djavax.net.ssl.keyStorePassword=changeit \
--Djavax.net.ssl.keyStoreType=PKCS12 \
--Djavax.net.ssl.trustStore=/path/to/keycloak-truststore.p12 \
--Djavax.net.ssl.trustStorePassword=changeit \
--Djavax.net.ssl.trustStoreType=PKCS12
-```
-
-**curl smoke test:**
-
-```bash
-curl --cert certs/clients/billing-worker/billing-worker.crt \
-  --key certs/clients/billing-worker/billing-worker.key \
-  --cacert certs/server/server-ca.crt \
-  -d grant_type=client_credentials \
-  -d client_id=billing-worker \
-  https://localhost:8443/realms/acme-org/protocol/openid-connect/token
-```
-
-**Authentication flow:**
-
-```text
-caller presents billing-worker.crt
-  → Keycloak verifies it chains to client-ca.crt (TLS layer)
-  → Keycloak matches certificate subject DN to client billing-worker
-  → token endpoint issues a client_credentials token
-```
+The adorsys keycloak-config-cli option lives in [`config-as-code/keycloak-config-cli`](config-as-code/keycloak-config-cli) and is configured to authenticate with a client secret as of now.
 
 ---
 

@@ -17,6 +17,7 @@ SERVER_CERT_DIR="${SERVER_CERT_DIR:-${CERTS_DIR}/server}"
 CLIENT_CA_DIR="${CLIENT_CA_DIR:-${CERTS_DIR}/client-ca}"
 INTERNAL_CA_DIR="${INTERNAL_CA_DIR:-${CERTS_DIR}/internal-ca}"
 CONFIG_CLI_CERT_DIR="${CONFIG_CLI_CERT_DIR:-${CERTS_DIR}/config-cli}"
+TERRAFORM_CLIENT_CERT_DIR="${TERRAFORM_CLIENT_CERT_DIR:-${CERTS_DIR}/clients/terraform-provider}"
 
 SERVER_CA_CN="${SERVER_CA_CN:-keycloak-playground-server-ca}"
 CLIENT_CA_CN="${CLIENT_CA_CN:-keycloak-playground-client-ca}"
@@ -27,6 +28,8 @@ CLIENT_CA_DAYS="${CLIENT_CA_DAYS:-365}"
 SERVER_CERT_DAYS="${SERVER_CERT_DAYS:-365}"
 TRUSTSTORE_PASSWORD="${TRUSTSTORE_PASSWORD:-changeit}"
 KEY_SIZE="${KEY_SIZE:-4096}"
+TERRAFORM_CLIENT_CERT_CN="${TERRAFORM_CLIENT_CERT_CN:-terraform-provider}"
+TERRAFORM_CLIENT_CERT_DAYS="${TERRAFORM_CLIENT_CERT_DAYS:-365}"
 
 log() { printf '%s\n' "$*"; }
 warn() { printf 'WARN: %s\n' "$*" >&2; }

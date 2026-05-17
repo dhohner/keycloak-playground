@@ -6,3 +6,6 @@ tls.*
 *.p12
 *.srl
 logs/
+certs/clients/
+**/.terraform/
+*.lock.hcl
