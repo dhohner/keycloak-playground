@@ -1,3 +1,77 @@
 realm: acme-org
-displayName: acme org
 enabled: true
+
+roles:
+  realm:
+    - name: ORDERS_READ
+      description: User may read orders
+    - name: ORDERS_WRITE
+      description: User may write orders
+    - name: SVC_MOBILE_BFF_CALL_ORDERS_API
+      description: mobile-bff may call orders-api
+
+clients:
+  - clientId: mobile-app
+    protocol: openid-connect
+    publicClient: true
+    standardFlowEnabled: true
+    directAccessGrantsEnabled: false
+    fullScopeAllowed: false
+    defaultClientScopes:
+      - profile
+      - email
+      - roles
+      - bff-audience
+
+  - clientId: mobile-bff
+    protocol: openid-connect
+    publicClient: false
+    clientAuthenticatorType: client-secret
+    secret: "very-secret"
+    serviceAccountsEnabled: true
+    standardFlowEnabled: false
+    directAccessGrantsEnabled: false
+    fullScopeAllowed: false
+    attributes:
+      standard.token.exchange.enabled: "true"
+      standard.token.exchange.refresh.enabled: "false"
+    defaultClientScopes:
+      - profile
+      - email
+      - roles
+      - orders-api-audience
+
+  - clientId: orders-api
+    protocol: openid-connect
+    bearerOnly: true
+    fullScopeAllowed: false
+
+clientScopes:
+  - name: bff-audience
+    protocol: openid-connect
+    protocolMappers:
+      - name: mobile-bff-audience
+        protocol: openid-connect
+        protocolMapper: oidc-audience-mapper
+        config:
+          included.client.audience: mobile-bff
+          access.token.claim: "true"
+          id.token.claim: "false"
+
+  - name: orders-api-audience
+    protocol: openid-connect
+    protocolMappers:
+      - name: orders-api-audience
+        protocol: openid-connect
+        protocolMapper: oidc-audience-mapper
+        config:
+          included.client.audience: orders-api
+          access.token.claim: "true"
+          id.token.claim: "false"
+
+users:
+  - username: service-account-mobile-bff
+    enabled: true
+    serviceAccountClientId: mobile-bff
+    realmRoles:
+      - SVC_MOBILE_BFF_CALL_ORDERS_API
